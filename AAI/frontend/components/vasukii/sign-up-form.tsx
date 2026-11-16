@@ -46,7 +46,7 @@ export function SignUpForm() {
           role,
           redirect_to: redirect,
         })
-        if (!res || res.requiresEmailConfirmation || (!res.accessToken && !res.user)) return
+        if (!res || res.requiresEmailConfirmation || !res.accessToken) return
         await mutate(() => true, undefined, { revalidate: false })
         if (res.user) await mutate(swrKeys.me, res.user, { revalidate: true })
         router.replace('/')
@@ -79,14 +79,14 @@ export function SignUpForm() {
       <Field label="Full name" htmlFor="name">
         <input id="name" name="name" required maxLength={120} autoComplete="name" className={inputClass} />
       </Field>
-      <Field label="University email or ID" htmlFor="email">
-        <input id="email" name="email" type="text" required autoComplete="username" placeholder="name@jklu.edu.in" className={inputClass} />
+      <Field label="University email" htmlFor="email">
+        <input id="email" name="email" type="email" required autoComplete="username" placeholder="name@jklu.edu.in" className={inputClass} />
       </Field>
       <Field label="Department" htmlFor="department" hint="Optional">
         <input id="department" name="department" maxLength={120} autoComplete="organization-title" className={inputClass} />
       </Field>
-      <Field label="Password" htmlFor="password">
-        <input id="password" name="password" type="password" required autoComplete="new-password" className={inputClass} />
+      <Field label="Password" htmlFor="password" hint="At least 8 characters">
+        <input id="password" name="password" type="password" required minLength={8} autoComplete="new-password" className={inputClass} />
       </Field>
       <SubmitFeedback error={error} />
       <SubmitButton pending={pending}>Create account</SubmitButton>

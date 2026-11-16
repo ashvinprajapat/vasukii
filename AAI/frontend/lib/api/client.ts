@@ -97,7 +97,7 @@ export async function apiRequest<S extends z.ZodTypeAny>(
     if (res.status === 401 && token && !key.startsWith('auth.') && (await refreshAccessToken())) {
       return apiRequest(key, schema, { params, input, signal, timeoutMs })
     }
-    if (res.status === 401 && token) clearSession()
+    if (res.status === 401) clearSession()
     throw new ApiError(key, res.status, await readDetail(res))
   }
 

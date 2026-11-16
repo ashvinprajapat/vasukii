@@ -14,11 +14,9 @@ import {
   signInResultSchema,
   userSchema,
   venueSchema,
-  type SignInResult,
-  type User,
   type VenueKind,
 } from './schemas'
-import { clearSession, DEMO_AUTH, getDemoUser, setSession, startDemoSession, updateDemoUser } from './session'
+import { clearSession, setSession } from './session'
 
 export type SignUpInput = {
   name: string
@@ -34,44 +32,25 @@ function storeSession(result: { accessToken?: string | null; refreshToken?: stri
 }
 
 export const authService = {
-  async signIn(input: { email: string; password: string }): Promise<SignInResult> {
-    if (DEMO_AUTH) {
-      const user = startDemoSession({ id: input.email })
-      return { accessToken: null, refreshToken: null, user, requiresEmailConfirmation: false }
-    }
+  async signIn(input: { email: string; password: string }) {
     const result = await apiRequest('auth.signIn', signInResultSchema, { input })
     storeSession(result)
     return result
   },
-  async signUp(input: SignUpInput): Promise<SignInResult> {
-    if (DEMO_AUTH) {
-      const user = startDemoSession({ id: input.email, name: input.name, role: input.role, department: input.department ?? null })
-      return { accessToken: null, refreshToken: null, user, requiresEmailConfirmation: false }
-    }
+  async signUp(input: SignUpInput) {
     const result = await apiRequest('auth.signUp', signInResultSchema, { input })
     storeSession(result)
     return result
   },
   async signOut() {
-    if (DEMO_AUTH) return clearSession()
     try {
       await apiRequest('auth.signOut', emptyResponseSchema)
     } finally {
       clearSession()
     }
   },
-  async me(): Promise<User> {
-    if (DEMO_AUTH) {
-      const user = getDemoUser()
-      if (!user) throw new Error('No demo session')
-      return user
-    }
-    return apiRequest('auth.me', userSchema)
-  },
-  async updateProfile(input: { name: string; department?: string }): Promise<User> {
-    if (DEMO_AUTH) return updateDemoUser({ name: input.name, department: input.department ?? null })
-    return apiRequest('profile.update', userSchema, { input })
-  },
+  me: () => apiRequest('auth.me', userSchema),
+  updateProfile: (input: { name: string; department?: string }) => apiRequest('profile.update', userSchema, { input }),
 }
 
 export const bookingService = {
