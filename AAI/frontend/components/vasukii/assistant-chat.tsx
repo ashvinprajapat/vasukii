@@ -3,6 +3,7 @@
 import { ArrowUp, CircleAlert, PlugZap, Sparkles } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { isIntegrationPending, userMessage } from '@/lib/api/errors'
+import { useCurrentUser } from '@/lib/api/hooks'
 import { assistantService, type ChatTurn } from '@/lib/api/services'
 import { cn } from '@/lib/utils'
 
@@ -17,6 +18,7 @@ export function AssistantChat({ initialPrompt }: { initialPrompt?: string }) {
   const [error, setError] = useState<unknown>(null)
   const endRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const { data: user } = useCurrentUser()
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -34,7 +36,7 @@ export function AssistantChat({ initialPrompt }: { initialPrompt?: string }) {
     setPending(true)
     abortRef.current = new AbortController()
     try {
-      const reply = await assistantService.send({ message, history }, abortRef.current.signal)
+      const reply = await assistantService.send({ message, history, email: user?.email }, abortRef.current.signal)
       setMessages((m) => [...m, { id: crypto.randomUUID(), role: 'assistant', content: reply }])
     } catch (e) {
       if ((e as Error)?.name !== 'AbortError') setError(e)

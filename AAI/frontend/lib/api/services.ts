@@ -1,19 +1,14 @@
-import { z } from 'zod'
 import { apiRequest } from './client'
 import { ASSISTANT_TIMEOUT_MS } from './config'
+import { findAvailableVenues, weekdayOf } from './campus'
+import { InputError } from './errors'
 import {
-  activitySchema,
   assistantReplySchema,
   bookingRequestSchema,
-  bookingSchema,
+  campusOverviewSchema,
   emptyResponseSchema,
-  guestHouseInfoSchema,
-  notificationSchema,
-  parkingInfoSchema,
-  searchResultSchema,
   signInResultSchema,
   userSchema,
-  venueSchema,
   type VenueKind,
 } from './schemas'
 import { clearSession, setSession } from './session'
@@ -53,15 +48,12 @@ export const authService = {
   updateProfile: (input: { name: string; department?: string }) => apiRequest('profile.update', userSchema, { input }),
 }
 
-export const bookingService = {
-  upcoming: () => apiRequest('bookings.list', z.array(bookingSchema)),
-  requests: () => apiRequest('requests.list', z.array(bookingRequestSchema)),
-  schedule: () => apiRequest('schedule.list', z.array(bookingSchema)),
+export const campusService = {
+  /** `day` selects which weekday's timetable slots are included; everything else is unfiltered. */
+  overview: (day?: string) => apiRequest('campus.overview', campusOverviewSchema, { input: day ? { day } : undefined }),
 }
 
 export const activityService = {
-  recent: () => apiRequest('activity.list', z.array(activitySchema)),
-  notifications: () => apiRequest('notifications.list', z.array(notificationSchema)),
   markNotificationRead: (id: string) => apiRequest('notifications.markRead', emptyResponseSchema, { params: { id } }),
 }
 
@@ -76,7 +68,11 @@ export type VenueSearchInput = {
 export type VenueBookingInput = VenueSearchInput & { venueId: string; purpose: string }
 
 export const venueService = {
-  searchAvailable: (input: VenueSearchInput) => apiRequest('venues.searchAvailable', z.array(venueSchema), { input }),
+  async searchAvailable(input: VenueSearchInput) {
+    if (input.endTime <= input.startTime) throw new InputError('End time must be after start time.')
+    const overview = await campusService.overview(weekdayOf(input.date))
+    return findAvailableVenues(overview, input)
+  },
   requestBooking: (input: VenueBookingInput) => apiRequest('venues.requestBooking', bookingRequestSchema, { input }),
 }
 
@@ -90,7 +86,6 @@ export type GuestHouseRequestInput = {
 }
 
 export const guestHouseService = {
-  info: () => apiRequest('guestHouse.info', guestHouseInfoSchema),
   request: (input: GuestHouseRequestInput) => apiRequest('guestHouse.request', bookingRequestSchema, { input }),
 }
 
@@ -104,25 +99,38 @@ export type VisitorParkingInput = {
 }
 
 export const parkingService = {
-  info: () => apiRequest('parking.info', parkingInfoSchema),
   visitorRequest: (input: VisitorParkingInput) => apiRequest('parking.visitorRequest', bookingRequestSchema, { input }),
-}
-
-export const searchService = {
-  query: (q: string) => apiRequest('search.query', z.array(searchResultSchema), { input: { q } }),
 }
 
 export type ChatTurn = { role: 'user' | 'assistant'; content: string }
 
-/** Removes any reasoning traces a model may leak into its final text. */
+/** Removes reasoning traces a model may leak, and Markdown markers the plain-text chat can't render. */
 function sanitizeReply(text: string) {
-  return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim()
+  return text
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/`([^`\n]+)`/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .trim()
+}
+
+const HISTORY_TURNS = 6
+const HISTORY_CHARS = 600
+
+/** The agent endpoint takes a single prompt, so recent turns are folded in to keep follow-ups in context. */
+function buildPrompt(message: string, history: ChatTurn[]) {
+  const recent = history.slice(-HISTORY_TURNS)
+  if (recent.length === 0) return message
+  const transcript = recent
+    .map((t) => `${t.role === 'user' ? 'User' : 'Vasukii'}: ${t.content.slice(0, HISTORY_CHARS)}`)
+    .join('\n')
+  return `Conversation so far:\n${transcript}\n\nUser's new message: ${message}`
 }
 
 export const assistantService = {
-  async send(input: { message: string; history: ChatTurn[] }, signal?: AbortSignal) {
+  async send(input: { message: string; history: ChatTurn[]; email?: string | null }, signal?: AbortSignal) {
     const { reply } = await apiRequest('assistant.send', assistantReplySchema, {
-      input,
+      input: { prompt: buildPrompt(input.message, input.history), email: input.email },
       signal,
       timeoutMs: ASSISTANT_TIMEOUT_MS,
     })

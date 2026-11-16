@@ -1,10 +1,21 @@
 'use client'
 
-import { useSyncExternalStore } from 'react'
+import { useCallback, useMemo, useSyncExternalStore } from 'react'
 import useSWR, { type SWRConfiguration } from 'swr'
+import {
+  searchCampus,
+  selectActivity,
+  selectGuestHouse,
+  selectNotifications,
+  selectParking,
+  selectRequests,
+  selectSchedule,
+  selectUpcomingBookings,
+} from './campus'
 import { hasSession, subscribeSession } from './session'
 import { ApiError, isIntegrationPending } from './errors'
-import { activityService, authService, bookingService, guestHouseService, parkingService, searchService } from './services'
+import type { CampusOverview } from './schemas'
+import { authService, campusService } from './services'
 
 const config: SWRConfiguration = {
   revalidateOnFocus: false,
@@ -16,15 +27,18 @@ const config: SWRConfiguration = {
   },
 }
 
+const OVERVIEW_KEY = 'campus.overview'
+
+/** Every booking-derived view reads the same overview, so revalidating any of these keys refreshes all of them. */
 export const swrKeys = {
   me: 'auth.me',
-  bookings: 'bookings.list',
-  requests: 'requests.list',
-  schedule: 'schedule.list',
-  activity: 'activity.list',
-  notifications: 'notifications.list',
-  guestHouse: 'guestHouse.info',
-  parking: 'parking.info',
+  bookings: OVERVIEW_KEY,
+  requests: OVERVIEW_KEY,
+  schedule: OVERVIEW_KEY,
+  activity: OVERVIEW_KEY,
+  notifications: OVERVIEW_KEY,
+  guestHouse: OVERVIEW_KEY,
+  parking: OVERVIEW_KEY,
 } as const
 
 export type SessionStatus = 'unknown' | 'signed-in' | 'signed-out'
@@ -43,12 +57,44 @@ export function useCurrentUser() {
   const query = useSWR(status === 'signed-in' ? swrKeys.me : null, authService.me, config)
   return { ...query, isLoading: query.isLoading || status === 'unknown', status }
 }
-export const useUpcomingBookings = () => useSWR(swrKeys.bookings, bookingService.upcoming, config)
-export const useBookingRequests = () => useSWR(swrKeys.requests, bookingService.requests, config)
-export const useSchedule = () => useSWR(swrKeys.schedule, bookingService.schedule, config)
-export const useRecentActivity = () => useSWR(swrKeys.activity, activityService.recent, config)
-export const useNotifications = () => useSWR(swrKeys.notifications, activityService.notifications, config)
-export const useGuestHouseInfo = () => useSWR(swrKeys.guestHouse, guestHouseService.info, config)
-export const useParkingInfo = () => useSWR(swrKeys.parking, parkingService.info, config)
-export const useSearch = (q: string) =>
-  useSWR(q ? ['search.query', q] : null, ([, query]: [string, string]) => searchService.query(query), config)
+
+function useOverview(enabled: boolean) {
+  return useSWR(enabled ? OVERVIEW_KEY : null, () => campusService.overview(), config)
+}
+
+function useCampusView<T>(select: (o: CampusOverview) => T) {
+  const status = useSessionStatus()
+  const overview = useOverview(status === 'signed-in')
+  const data = useMemo(() => (overview.data ? select(overview.data) : undefined), [overview.data, select])
+  return { data, error: overview.error, isLoading: overview.isLoading || status === 'unknown', mutate: overview.mutate }
+}
+
+/** Views scoped to the signed-in user's bookings (matched on their university email). */
+function useUserView<T>(select: (o: CampusOverview, email: string) => T) {
+  const user = useCurrentUser()
+  const overview = useOverview(user.status === 'signed-in')
+  const email = user.data?.email
+  const data = useMemo(
+    () => (overview.data && email ? select(overview.data, email) : undefined),
+    [overview.data, email, select],
+  )
+  return {
+    data,
+    error: user.error ?? overview.error,
+    isLoading: user.isLoading || overview.isLoading,
+    mutate: () => Promise.all([user.mutate(), overview.mutate()]),
+  }
+}
+
+export const useUpcomingBookings = () => useUserView(selectUpcomingBookings)
+export const useBookingRequests = () => useUserView(selectRequests)
+export const useSchedule = () => useUserView(selectSchedule)
+export const useRecentActivity = () => useUserView(selectActivity)
+export const useNotifications = () => useUserView(selectNotifications)
+export const useGuestHouseInfo = () => useCampusView(selectGuestHouse)
+export const useParkingInfo = () => useCampusView(selectParking)
+
+export function useSearch(q: string) {
+  const select = useCallback((o: CampusOverview, email: string) => searchCampus(o, email, q), [q])
+  return useUserView(select)
+}
