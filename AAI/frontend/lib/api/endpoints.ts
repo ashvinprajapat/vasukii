@@ -1,14 +1,10 @@
 /**
- * Single source of truth for every backend call the frontend makes.
+ * Single source of truth for every backend call the frontend makes, matched to the FastAPI routes in
+ * AAI/backend/main.py. A `null` contract means the backend has no route for that action yet: the UI
+ * shows an honest "not connected" message and never sends a request or reports success.
  *
- * No FastAPI routes were available when this was written (the frontend contained no API calls
- * and the backend source was not accessible), so every `contract` is `null`. While a contract is
- * null the UI shows an honest "not connected yet" state and never sends a request.
- *
- * To connect an endpoint, replace `contract: null` with the real method and path and, when the
- * backend's JSON differs from the view models in ./schemas.ts, add `mapResponse` / `mapRequest`
- * adapters. Responses are validated against those view models before they reach the UI.
- * See INTEGRATION.md for the full checklist.
+ * When the backend's JSON differs from the view models in ./schemas.ts, `mapResponse` / `mapRequest`
+ * adapt it. Responses are validated against those view models before they reach the UI.
  */
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
@@ -28,9 +24,6 @@ type IntegrationPoint = {
   needs: string[]
   contract: EndpointContract | null
 }
-
-const AUTHORIZED =
-  'Must be scoped to the authenticated user on the backend (RBAC), not filtered by the frontend.'
 
 type BackendUser = { id: string; name: string; email: string; role: string; department?: string | null }
 
@@ -97,84 +90,48 @@ export const INTEGRATION_POINTS = {
     needs: [],
     contract: { method: 'PATCH', path: '/api/auth/me', mapResponse: mapUser },
   },
-  'bookings.list': {
-    purpose: 'Upcoming bookings of the signed-in user (venue, date, time slot, status, details).',
-    needs: ['Method and path', 'Response shape and status values (README mentions PENDING_APPROVAL)', 'Date/time format and timezone', AUTHORIZED],
-    contract: null,
-  },
-  'requests.list': {
-    purpose: 'Booking requests of the signed-in user with Pending / Approved / Rejected status.',
-    needs: ['Method and path (or whether this is the same route as bookings.list)', 'Response shape', AUTHORIZED],
-    contract: null,
-  },
-  'schedule.list': {
-    purpose: 'Upcoming approved bookings and other schedule entries for the signed-in user.',
-    needs: ['Method and path (or whether bookings.list with a status filter should be used)', 'Response shape', AUTHORIZED],
-    contract: null,
-  },
-  'activity.list': {
-    purpose: 'Recent activity of the signed-in user.',
-    needs: ['Confirmation that an activity API exists', 'Method, path and response shape', AUTHORIZED],
-    contract: null,
-  },
-  'notifications.list': {
-    purpose: 'Notifications for the signed-in user.',
-    needs: ['Confirmation that a notifications API exists', 'Method, path and response shape', AUTHORIZED],
-    contract: null,
-  },
-  'notifications.markRead': {
-    purpose: 'Mark a notification as read.',
-    needs: ['Method and path (with notification id param)'],
-    contract: null,
-  },
-  'venues.searchAvailable': {
-    purpose: 'Find clash-free classrooms, labs or amphitheatres for a date and time window.',
+  'campus.overview': {
+    purpose:
+      'Resources, the timetable for one weekday, all bookings and campus policies. Bookings, requests, schedule, activity, notifications, venue availability, guest house, parking and search are derived from it in ./campus.ts.',
     needs: [
-      'Method and path (README mentions the check_availability_and_clashes tool — is it exposed over REST?)',
-      'Query/body fields: venue type values, date and time formats, capacity',
-      'Response shape for each available venue',
+      'Backend: this route is unauthenticated and returns every user’s bookings; user-scoped routes should replace the frontend email filter.',
     ],
-    contract: null,
+    contract: { method: 'GET', path: '/api/dashboard/overview' },
   },
   'venues.requestBooking': {
-    purpose: 'Submit a booking request for a venue (staged for Estate Admin approval).',
-    needs: ['Method and path (README mentions create_coordinated_booking_request)', 'Request body fields', 'Response shape including the created request id and status'],
-    contract: null,
-  },
-  'guestHouse.info': {
-    purpose: 'MDC Guest House accommodation information.',
-    needs: ['Whether this is served by the backend or is static content', 'Method, path and response shape'],
+    purpose: 'Submit a booking request for a venue (staged as PENDING_APPROVAL for Estate Admin review).',
+    needs: [
+      'Backend: no REST route creates bookings. create_coordinated_booking_request exists only as an agent tool, and the agent has it disabled.',
+    ],
     contract: null,
   },
   'guestHouse.request': {
     purpose: 'Submit an MDC Guest House stay request.',
-    needs: ['Method and path', 'Request body fields (guest details, dates, room type?)', 'Response shape', 'Which roles may submit (README: Faculty)'],
-    contract: null,
-  },
-  'parking.info': {
-    purpose: 'Parking zones and, if supported, live availability.',
-    needs: ['Method and path', 'Response shape; whether availability counts are provided'],
+    needs: ['Backend: no REST route creates guest house bookings (bookings table has no guest name/phone/check-out columns).'],
     contract: null,
   },
   'parking.visitorRequest': {
     purpose: 'Submit a visitor parking request.',
-    needs: ['Confirmation that visitor parking requests are supported', 'Method, path, request body fields and response shape'],
+    needs: ['Backend: no REST route creates parking bookings (bookings table has no visitor/vehicle columns).'],
     contract: null,
   },
-  'search.query': {
-    purpose: 'Global search across venues and the user’s bookings.',
-    needs: ['Confirmation that a search API exists', 'Method, path, query param name and response shape'],
+  'notifications.markRead': {
+    purpose: 'Mark a notification as read.',
+    needs: ['Backend: notifications and their read state are not stored.'],
     contract: null,
   },
   'assistant.send': {
     purpose: 'Send a message to the Vasukii AI agent and receive its reply.',
-    needs: [
-      'Method and path of the FastAPI agent endpoint',
-      'Request body: message field name, and whether prior history or a conversation id is sent',
-      'Response field holding the final answer text (internal reasoning / failover diagnostics must not be shown)',
-      'Whether the response is streamed (SSE) or returned as a single JSON body',
-    ],
-    contract: null,
+    needs: [],
+    contract: {
+      method: 'POST',
+      path: '/api/agent/chat',
+      mapRequest: (input) => {
+        const i = input as { prompt: string; email?: string | null }
+        return i.email ? { prompt: i.prompt, organizer_email: i.email } : { prompt: i.prompt }
+      },
+      mapResponse: (raw) => ({ reply: (raw as { response?: unknown } | null)?.response }),
+    },
   },
 } satisfies Record<string, IntegrationPoint>
 

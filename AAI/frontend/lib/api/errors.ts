@@ -53,6 +53,23 @@ export class ResponseValidationError extends Error {
   }
 }
 
+/** The user's input was rejected before any request was sent; the message is user-facing. */
+export class InputError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'InputError'
+  }
+}
+
+const unsupportedAction: Partial<Record<EndpointKey, string>> = {
+  'venues.requestBooking':
+    'Venue requests can’t be submitted online yet: the campus backend has no booking endpoint. Ask the Estate Admin office to reserve this slot.',
+  'guestHouse.request':
+    'Guest house requests can’t be submitted online yet: the campus backend has no guest house booking endpoint.',
+  'parking.visitorRequest':
+    'Visitor passes can’t be requested online yet: the campus backend has no visitor parking endpoint.',
+}
+
 export function isIntegrationPending(error: unknown): error is IntegrationPendingError {
   return error instanceof IntegrationPendingError
 }
@@ -63,9 +80,12 @@ export function isUnauthorized(error: unknown) {
 
 /** A short, user-facing message. Never surfaces stack traces or provider diagnostics. */
 export function userMessage(error: unknown, fallback = 'Something went wrong. Please try again.') {
+  if (error instanceof InputError) return error.message
   if (error instanceof IntegrationPendingError) {
     if (error.reason === 'base-url' && error.endpoint.startsWith('auth.'))
       return 'Sign-in is unavailable: the Vasukii backend URL (NEXT_PUBLIC_API_BASE_URL) isn’t configured.'
+    const unsupported = unsupportedAction[error.endpoint]
+    if (unsupported) return unsupported
     return 'This feature isn’t connected to the campus backend yet.'
   }
   if (error instanceof NetworkError)

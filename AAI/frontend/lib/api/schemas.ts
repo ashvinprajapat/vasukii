@@ -110,6 +110,55 @@ export const searchResultSchema = z.object({
 })
 export type SearchResult = z.infer<typeof searchResultSchema>
 
+/**
+ * Wire format of GET /api/dashboard/overview (rows of the Supabase `resources`, `academic_timetables`,
+ * `bookings` and `campus_policies` tables). Views above are derived from it in ./campus.ts.
+ */
+export const backendResourceSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  category: z.string(),
+  building: z.string().nullish(),
+  capacity: z.number().nullish(),
+  features: z.array(z.string()).nullish(),
+  is_active: z.boolean().nullish(),
+})
+export const backendTimetableSchema = z.object({
+  resource_id: z.string().nullish(),
+  day_of_week: z.string(),
+  start_time: z.string(),
+  end_time: z.string(),
+})
+export const backendBookingSchema = z.object({
+  id: z.string(),
+  booking_group_id: z.string().nullish(),
+  resource_id: z.string().nullish(),
+  organizer_email: z.string(),
+  event_title: z.string(),
+  booking_date: z.string(),
+  start_time: z.string(),
+  end_time: z.string(),
+  expected_attendees: z.number().nullish(),
+  status: z.string(),
+  admin_remarks: z.string().nullish(),
+  created_at: z.string().nullish(),
+})
+export const backendPolicySchema = z.object({
+  id: z.union([z.number(), z.string()]),
+  category: z.string(),
+  rule_title: z.string(),
+  policy_text: z.string(),
+})
+export const campusOverviewSchema = z.object({
+  resources: z.array(backendResourceSchema),
+  timetables: z.array(backendTimetableSchema),
+  bookings: z.array(backendBookingSchema),
+  policies: z.array(backendPolicySchema),
+})
+export type BackendResource = z.infer<typeof backendResourceSchema>
+export type BackendBooking = z.infer<typeof backendBookingSchema>
+export type CampusOverview = z.infer<typeof campusOverviewSchema>
+
 export const assistantReplySchema = z.object({ reply: z.string().min(1) })
 export type AssistantReply = z.infer<typeof assistantReplySchema>
 
