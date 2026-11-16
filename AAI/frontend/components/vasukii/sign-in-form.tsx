@@ -28,8 +28,8 @@ export function SignInForm() {
         router.replace('/')
       }}
     >
-      <Field label="University email" htmlFor="email">
-        <input id="email" name="email" type="email" required autoComplete="username" placeholder="name@jklu.edu.in" className={inputClass} />
+      <Field label="University email or ID" htmlFor="email">
+        <input id="email" name="email" type="text" required autoComplete="username" placeholder="name@jklu.edu.in" className={inputClass} />
       </Field>
       <Field label="Password" htmlFor="password">
         <input id="password" name="password" type="password" required autoComplete="current-password" className={inputClass} />
